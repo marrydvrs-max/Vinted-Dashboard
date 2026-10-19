@@ -57,6 +57,7 @@ input:focus{outline:2px solid var(--teal);border-color:transparent}
 #login .card{width:100%;max-width:380px;padding:22px}
 #login input{margin-bottom:12px}#msg{color:var(--red);font-size:13px;margin-bottom:10px;min-height:16px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(130px + env(safe-area-inset-bottom,0px));background:#171717;color:#fff;border-radius:6px;padding:10px 14px;font-size:14px;z-index:20;max-width:90%}
+.ev{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--ln)}.ev:first-of-type{border-top:0}.ev i{width:10px;height:10px;border-radius:50%;flex:none}.en{flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px}
 </style></head><body>
 
 <div id="login" hidden><div class="card">
@@ -108,7 +109,7 @@ const fd=d=>{if(!d)return'';const[p,m,t]=d.split('-');return t+'.'+m+'.'+p.slice
 const ALL=['rev','sp','pr'];
 const NAMES={rev:'Verkauft (Umsatz)',sp:'Gekauft (Ausgaben)',pr:'Gewinn'};
 const COL={rev:'#09b1ba',sp:'#f2994a',pr:'#2e9e5b'};
-let sb,user=null,items=[],view='home',sel=new Set(ALL),rng=12,editing=null,armed=false,rmImg=false,curImg=null,authMode='in',tt;
+let sb,user=null,items=[],view='home',sel=new Set(ALL),rng=30,editing=null,armed=false,rmImg=false,curImg=null,authMode='in',tt;
 
 function toast(t){const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(tt);tt=setTimeout(()=>e.hidden=true,3500)}
 
@@ -154,7 +155,7 @@ function months(){
   const end=[ks[ks.length-1],today().slice(0,7)].sort()[1],S=[];
   let[yy,mo]=ks[0].split('-').map(Number);
   for(let n=0;n<120;n++){const k=yy+'-'+String(mo).padStart(2,'0');S.push({k,...(m[k]||{rev:0,sp:0,pr:0,nb:0,ns:0})});if(k>=end)break;if(++mo>12){mo=1;yy++}}
-  return rng?S.slice(-rng):S;
+  return S;
 }
 
 /* ---------- Ansichten ---------- */
@@ -179,35 +180,58 @@ function vList(sold){
   const a=items.filter(i=>(i.sell!=null)===sold).sort((p,q)=>(sold?q.s_date||'':q.b_date||'').localeCompare(sold?p.s_date||'':p.b_date||''));
   return `<h2>${sold?'Verkauft':'Bestand'} <span class="mu s">(${a.length})</span></h2>`+(a.length?`<div class="grid">${a.map(card).join('')}</div>`:`<div class="empty">${sold?'Noch nichts verkauft.':'Dein Bestand ist leer. Tippe auf + um einen Artikel hinzuzufügen.'}</div>`);
 }
+const TXT={rev:'#007782',sp:'#b65f0c',pr:'#2e9e5b'};
+const dayN=d=>Date.parse(d+'T00:00:00Z')/864e5;
+const dlab=(v,y)=>{const d=new Date(Math.round(v)*864e5);return String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+'.'+(y?String(d.getUTCFullYear()).slice(2):'')};
+function evs(){
+  const all=[];
+  for(const i of items){const c=i.buy+i.extra;
+    if(i.b_date)all.push({k:'sp',d:i.b_date,v:c,n:i.name});
+    if(i.sell!=null&&i.s_date){all.push({k:'rev',d:i.s_date,v:i.sell,n:i.name});all.push({k:'pr',d:i.s_date,v:i.sell-c,n:i.name})}}
+  const end=dayN(today());let start=end-rng;
+  if(!rng){const ds=all.map(e=>dayN(e.d));start=ds.length?Math.min(...ds):end-30}
+  if(start>=end)start=end-1;
+  return{start,end,list:all.filter(e=>sel.has(e.k)&&dayN(e.d)>=start&&dayN(e.d)<=end)};
+}
 function vStats(){
-  const S=months();
   const chip=(a,k,l,on)=>`<button class="chip ${on?'on':''}" data-${a}="${k}">${l}</button>`;
-  const rows=[...S].reverse().map(p=>`<div class="r"><b>${p.k.slice(5)}/${p.k.slice(0,4)}</b><span>Gekauft<br>${p.nb} · ${f(p.sp)}</span><span>Verkauft<br>${p.ns} · ${f(p.rev)}</span><b class="${p.pr>=0?'pos':'neg'}">${f(p.pr)}</b></div>`).join('');
+  const rows=[...months()].reverse().map(p=>`<div class="r"><b>${p.k.slice(5)}/${p.k.slice(0,4)}</b><span>Gekauft<br>${p.nb} · ${f(p.sp)}</span><span>Verkauft<br>${p.ns} · ${f(p.rev)}</span><b class="${p.pr>=0?'pos':'neg'}">${f(p.pr)}</b></div>`).join('');
+  const E=evs().list.slice().sort((a,b)=>b.d.localeCompare(a.d)||a.k.localeCompare(b.k)).slice(0,150);
+  const ev=E.map(e=>`<div class="ev"><i style="background:${COL[e.k]}"></i><span class="en">${esc(e.n)}<br><span class="mu s">${fd(e.d)} · ${NAMES[e.k]}</span></span><b>${f(e.v)}</b></div>`).join('');
   return `<h2>Statistik</h2>
 <div class="chips">${chip('ch','all','Alle',sel.size===3)}${chip('ch','sp','Gekauft',sel.has('sp')&&sel.size<3)}${chip('ch','rev','Verkauft',sel.has('rev')&&sel.size<3)}${chip('ch','pr','Gewinn',sel.has('pr')&&sel.size<3)}</div>
+<div class="chips">${chip('rg','7','Letzte 7 Tage',rng===7)}${chip('rg','30','Letzter Monat',rng===30)}${chip('rg','180','6 Monate',rng===180)}${chip('rg','0','Gesamt',rng===0)}</div>
 <div class="card"><div id="chart"></div><div id="readout"></div></div>
-<div class="chips">${chip('rg','6','6 Monate',rng===6)}${chip('rg','12','12 Monate',rng===12)}${chip('rg','0','Alles',rng===0)}</div>
+<div class="card"><h3>Einzelposten im Zeitraum</h3>${ev||'<p class="mu">Keine Einträge im Zeitraum.</p>'}</div>
 <div class="card mt"><h3>Monatsübersicht</h3><div class="r h"><span>Monat</span><span>Käufe</span><span>Verkäufe</span><span>Gewinn</span></div>${rows||'<p class="mu">Noch keine Daten.</p>'}</div>`;
 }
 function chart(){
-  const S=months(),el=$('chart');
-  if(!S.length){el.innerHTML='<p class="mu">Noch keine Daten. Trage einen Artikel ein.</p>';return}
-  const keys=ALL.filter(k=>sel.has(k)),W=640,H=250,L=52,R=14,T=14,B=28;
-  const all=S.flatMap(p=>keys.map(k=>p[k])),lo=Math.min(0,...all),hi=Math.max(1,...all);
-  const x=i=>S.length===1?(L+W-R)/2:L+i*(W-L-R)/(S.length-1),y=v=>T+(hi-v)*(H-T-B)/(hi-lo);
-  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Verlauf pro Monat">`;
-  for(let t=0;t<=4;t++){const v=lo+(hi-lo)*t/4;s+=`<line class="gl" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L-6}" y="${y(v)+4}" text-anchor="end">${Math.round(v)} €</text>`}
-  const st=Math.ceil(S.length/8);
-  S.forEach((p,i)=>{if(i%st===0)s+=`<text class="ax" x="${x(i)}" y="${H-8}" text-anchor="middle">${p.k.slice(5)}/${p.k.slice(2,4)}</text>`});
-  s+=`<line id="cur" class="cur" y1="${T}" y2="${H-B}" x1="-9" x2="-9"/>`;
-  for(const k of keys){s+=`<polyline fill="none" stroke="${COL[k]}" stroke-width="2.5" stroke-linejoin="round" points="${S.map((p,i)=>x(i)+','+y(p[k])).join(' ')}"/>`+S.map((p,i)=>`<circle cx="${x(i)}" cy="${y(p[k])}" r="4.5" fill="${COL[k]}" stroke="#fff" stroke-width="2"/>`).join('')}
-  const cw=(W-L-R)/Math.max(S.length-1,1);
-  S.forEach((p,i)=>{s+=`<rect class="hit" data-i="${i}" x="${x(i)-cw/2}" y="${T}" width="${cw}" height="${H-T-B}"/>`});
+  const el=$('chart'),{start,end,list}=evs(),keys=ALL.filter(k=>sel.has(k));
+  if(!list.length){el.innerHTML='<p class="mu">Keine Einträge in diesem Zeitraum.</p>';$('readout').textContent='';return}
+  const W=640,H=260,L=52,R=16,T=14,B=30,x1=end+1;
+  const vals=list.map(e=>e.v),lo=Math.min(0,...vals),hi=Math.max(1,...vals);
+  const X=p=>L+(p-start)/(x1-start)*(W-L-R),Y=v=>T+(hi-v)*(H-T-B)/(hi-lo);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Verlauf">`;
+  for(let t=0;t<=4;t++){const v=lo+(hi-lo)*t/4;s+=`<line class="gl" x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}"/><text class="ax" x="${L-6}" y="${Y(v)+4}" text-anchor="end">${hi-lo>=10?Math.round(v):v.toFixed(1).replace('.',',')} €</text>`}
+  for(let t=0;t<=4;t++){const p=start+(x1-start)*t/4;s+=`<text class="ax" x="${X(p)}" y="${H-8}" text-anchor="${t===0?'start':t===4?'end':'middle'}">${dlab(Math.min(Math.floor(p),end),rng===0||rng>=180)}</text>`}
+  const pts=[];
+  for(const k of keys){
+    const byD={};list.filter(e=>e.k===k).forEach(e=>(byD[e.d]=byD[e.d]||[]).push(e));
+    const arr=[];
+    for(const d of Object.keys(byD).sort()){const g=byD[d];g.forEach((e,j)=>arr.push({k,e,x:X(dayN(d)+(j+.5)/g.length),y:Y(e.v)}))}
+    pts.push(...arr);
+    s+=`<polyline fill="none" stroke="${COL[k]}" stroke-width="2" stroke-linejoin="round" points="${arr.map(q=>q.x.toFixed(1)+','+q.y.toFixed(1)).join(' ')}"/>`+arr.map(q=>`<circle cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="4.5" fill="${COL[k]}" stroke="#fff" stroke-width="2"/>`).join('');
+  }
+  s+=`<circle id="ring" cx="-30" cy="-30" r="9" fill="none" stroke-width="2.5"/>`;
   el.innerHTML=s+'</svg>';
-  const show=i=>{const p=S[i];$('cur').setAttribute('x1',x(i));$('cur').setAttribute('x2',x(i));
-    $('readout').innerHTML=`<b>${p.k.slice(5)}/${p.k.slice(0,4)}</b> · `+keys.map(k=>`<span style="color:${k==='rev'?'#007782':k==='sp'?'#b65f0c':'#2e9e5b'}">${NAMES[k]} ${f(p[k])}${k==='sp'?' ('+p.nb+')':k==='rev'?' ('+p.ns+')':''}</span>`).join(' · ')};
-  el.querySelectorAll('.hit').forEach(r=>{const h=()=>show(+r.dataset.i);r.addEventListener('pointerenter',h);r.addEventListener('pointerdown',h)});
-  show(S.length-1);
+  const svg=el.querySelector('svg');
+  const show=q=>{const r=$('ring');r.setAttribute('cx',q.x);r.setAttribute('cy',q.y);r.setAttribute('stroke',COL[q.k]);
+    $('readout').innerHTML=`<b>${esc(q.e.n)}</b> · ${fd(q.e.d)} · <span style="color:${TXT[q.k]}">${NAMES[q.k]} ${f(q.e.v)}</span>`};
+  const pick=ev=>{const r=svg.getBoundingClientRect(),px=(ev.clientX-r.left)*W/r.width,py=(ev.clientY-r.top)*H/r.height;
+    let best=null,bd=1e12;for(const q of pts){const d=(q.x-px)**2+(q.y-py)**2;if(d<bd){bd=d;best=q}}if(best)show(best)};
+  svg.addEventListener('pointerdown',pick);
+  svg.addEventListener('pointermove',ev=>{if(ev.pointerType==='mouse')pick(ev)});
+  show(pts.reduce((a,b)=>b.x>a.x?b:a));
 }
 function render(){
   $('view').innerHTML=view==='home'?vHome():view==='stats'?vStats():vList(view==='sold');
